@@ -1,0 +1,3 @@
+[submodule "gas_benchmarking/lib/forge-std"]
+	path = gas_benchmarking/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
