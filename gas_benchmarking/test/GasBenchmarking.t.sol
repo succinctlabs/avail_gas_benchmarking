@@ -11,20 +11,24 @@ contract GasBenchmarkingTest is Test {
         gasBenchmarking = new GasBenchmarking();
         bytes32[] memory leaves = new bytes32[](180);
         for (uint256 i = 0; i < 180; i++) {
-            leaves[i] = bytes32(i);
+            leaves[i] = bytes32(i);   // For this test, all the data root hashes will just be the block number itself
         }
-        gasBenchmarking.calculateMerkeRoot(leaves);
+        gasBenchmarking.submitDataRootMerkleRoot(leaves, 0, 180);
     }
 
     function testVerifyMerkleProof() public {
-        uint256 index = 50;
-        bytes32[] memory proof = gasBenchmarking.getMerkleProof(index);
-        assertEq(gasBenchmarking.verifyMerkleProof(proof, bytes32(index), index), true);
+        uint256 merkleRootIdx = 0;
+        uint256 blockNum = 50;
+        bytes32 claimedDataRoot = bytes32(blockNum);   // For this test, all the data root hashes will just be the block number itself
+        bytes32[] memory proof = gasBenchmarking.getMerkleProof(merkleRootIdx, blockNum);
+        assertEq(gasBenchmarking.verifyDataRoot(merkleRootIdx, proof, claimedDataRoot, blockNum), true);
     }
 
     function testVerifyMerkleProofCalldata() public {
-        uint256 index = 50;
-        bytes32[] memory proof = gasBenchmarking.getMerkleProof(index);
-        assertEq(gasBenchmarking.verifyMerkleProofCalldata(proof, bytes32(index), index), true);
+        uint256 merkleRootIdx = 0;
+        uint256 blockNum = 50;
+        bytes32 claimedDataRoot = bytes32(blockNum);   // For this test, all the data root hashes will just be the block number itself
+        bytes32[] memory proof = gasBenchmarking.getMerkleProof(merkleRootIdx, blockNum);
+        assertEq(gasBenchmarking.verifyDataRootCalldata(merkleRootIdx, proof, claimedDataRoot, blockNum), true);
     }
 }

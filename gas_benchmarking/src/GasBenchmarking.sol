@@ -1,55 +1,81 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-contract GasBenchmarking {
-    bytes32 public root;
+struct DataRootMerkleRoot {
+    uint64 startBlockNum;
+    uint64 endBlockNum;
+    bytes32 root;
+}
 
+contract GasBenchmarking {
+    mapping(uint256 => DataRootMerkleRoot) public dataRootMerkleRoots;
+    uint256 currentMerkleRootIdx = 0;
+
+    // THIS WILL NOT BE SAVED IN THE ACTUAL LIGHT CLIENT CONTRACT.
     mapping(bytes32 => bytes32[2]) children;
 
     // # of leaves is 180 (1 hours worth of blocks)
     // Height is 8
-    // Siblings is the merkle proof and is length 8 (don't need the last one as its the root)
-    // Index is the location of the value within the merkle tree (0 indexed)
-    function verifyMerkleProof(bytes32[] memory siblings, bytes32 value, uint256 index) public view returns (bool) {
+    // Proof contains the merkle proof and is length 8 (don't need the last one as its the root)
+    function verifyDataRoot(uint256 dataRootAccID, bytes32[] memory proof, bytes32 value, uint256 blockNumber) public view returns (bool) {
+        DataRootMerkleRoot memory merkleRoot = dataRootMerkleRoots[dataRootAccID];
+
+        require(merkleRoot.startBlockNum <= blockNumber, "blockNumber must be greater than or equal to startBlockNumber");
+        require(merkleRoot.endBlockNum >= blockNumber, "blockNumber must be less than or equal to endBlockNumber");
+
+
+        uint256 treeIdx = blockNumber - merkleRoot.startBlockNum;
         bytes32 hash = value;
-        for (uint256 i = 0; i < siblings.length; i++) {
-            bool siblingIsRight = index & (1 << i) == 0;
+        for (uint256 i = 0; i < proof.length; i++) {
+            bool siblingIsRight = treeIdx & (1 << i) == 0;
 
             if (siblingIsRight) {
-                hash = keccak256(abi.encodePacked(hash, siblings[i]));
+                hash = keccak256(abi.encodePacked(hash, proof[i]));
             } else {
-                hash = keccak256(abi.encodePacked(siblings[i], hash));
+                hash = keccak256(abi.encodePacked(proof[i], hash));
             }
         }
-        return hash == root;
+        return hash == merkleRoot.root;
     }
 
     // # of leaves is 180 (1 hours worth of blocks)
     // Height is 8
     // Siblings is the merkle proof and is length 8 (don't need the last one as its the root)
     // Index is the location of the value within the merkle tree (0 indexed)
-    function verifyMerkleProofCalldata(bytes32[] calldata siblings, bytes32 value, uint256 index) public view returns (bool) {
+    function verifyDataRootCalldata(uint256 dataRootAccID, bytes32[] calldata proof, bytes32 value, uint256 blockNumber) public view returns (bool) {
+        DataRootMerkleRoot memory merkleRoot = dataRootMerkleRoots[dataRootAccID];
+
+        require(merkleRoot.startBlockNum <= blockNumber, "blockNumber must be greater than or equal to startBlockNumber");
+        require(merkleRoot.endBlockNum >= blockNumber, "blockNumber must be less than or equal to endBlockNumber");
+
+        uint256 treeIdx = blockNumber - merkleRoot.startBlockNum;
         bytes32 hash = value;
-        for (uint256 i = 0; i < siblings.length; i++) {
-            bool siblingIsRight = index & (1 << i) == 0;
+        for (uint256 i = 0; i < proof.length; i++) {
+            bool siblingIsRight = treeIdx & (1 << i) == 0;
 
             if (siblingIsRight) {
-                hash = keccak256(abi.encodePacked(hash, siblings[i]));
+                hash = keccak256(abi.encodePacked(hash, proof[i]));
             } else {
-                hash = keccak256(abi.encodePacked(siblings[i], hash));
+                hash = keccak256(abi.encodePacked(proof[i], hash));
             }
         }
-        return hash == root;
+        return hash == merkleRoot.root;
     }
 
-    // # of leaves is 180 (1 hours worth of blocks)
-    function getMerkleProof(uint256 index) public view returns (bytes32[] memory siblings) {
-        require(index < 180, "index must be less than 180");
+    // THIS WILL NOT BE SAVED IN THE ACTUAL LIGHT CLIENT CONTRACT
+    // Intead, an off chain actor will need to save the merkle tree and service this request.
+
+    // Each data root accumulator has 180 leaves (1 hours worth of blocks)
+    function getMerkleProof(uint256 dataRootAccID, uint256 blockNumber) public view returns (bytes32[] memory siblings) {
+        DataRootMerkleRoot memory merkleRoot = dataRootMerkleRoots[dataRootAccID];
+
+        require(merkleRoot.startBlockNum <= blockNumber, "blockNumber must be greater than or equal to startBlockNumber");
+        require(merkleRoot.endBlockNum >= blockNumber, "blockNumber must be less than or equal to endBlockNumber");
 
         siblings = new bytes32[](8);
-        bytes32 nodeIter = root;
+        bytes32 nodeIter = merkleRoot.root;
         for (uint256 i = 7; i >= 0; i --) {
-            bool childIsLeft = (index & (1 << i) == 0);
+            bool childIsLeft = (blockNumber - merkleRoot.startBlockNum) & (1 << i) == 0;
 
             if (childIsLeft) {
                 siblings[i] = children[nodeIter][1];
@@ -68,7 +94,10 @@ contract GasBenchmarking {
     }
 
     // # of leaves is 180 (1 hours worth of blocks)
-    function calculateMerkeRoot(bytes32[] memory _dataRoots) public {
+    // Calculate a data root merkle root and save it in the dataRootMerkleRoots struct.
+    // Note that our circuit will be doing all this calculation, and the actual light client
+    // smart contract will just be submitting the data root merkle root (after the submitted ZK proof is verified, ofc.)
+    function submitDataRootMerkleRoot(bytes32[] memory _dataRoots, uint64 startBlockNum, uint64 endBlockNum) public {
         require(_dataRoots.length == 180, "leave length must be 180");
 
         bytes32[] memory currentLevelNodes = new bytes32[](256);
@@ -85,7 +114,14 @@ contract GasBenchmarking {
 
         while (true) {
             if (nextLevelNodes.length == 1) {
-                root = nextLevelNodes[0];
+                DataRootMerkleRoot memory newMerkleRoot = DataRootMerkleRoot({
+                    startBlockNum: startBlockNum,
+                    endBlockNum: endBlockNum,
+                    root: nextLevelNodes[0]
+                });
+                dataRootMerkleRoots[currentMerkleRootIdx] = newMerkleRoot;
+
+                currentMerkleRootIdx += 1;
                 return;
             }
 
