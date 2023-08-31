@@ -93,6 +93,8 @@ contract GasBenchmarking {
         return siblings;
     }
 
+    event NewDataRootMerkleRoot(uint256 merkleRootIdx, uint256 startBlockNum, uint256 endBlockNum, bytes32 root);
+
     // # of leaves is 180 (1 hours worth of blocks)
     // Calculate a data root merkle root and save it in the dataRootMerkleRoots struct.
     // Note that our circuit will be doing all this calculation, and the actual light client
@@ -120,6 +122,7 @@ contract GasBenchmarking {
                     root: nextLevelNodes[0]
                 });
                 dataRootMerkleRoots[currentMerkleRootIdx] = newMerkleRoot;
+                emit NewDataRootMerkleRoot(currentMerkleRootIdx, startBlockNum, endBlockNum, nextLevelNodes[0]);
 
                 currentMerkleRootIdx += 1;
                 return;
